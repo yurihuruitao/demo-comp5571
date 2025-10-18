@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AICSE - Health Assistant</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Roboto:wght@300;400&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <div class="main-container">
+        <h1 class="logo-text">AICSE</h1>
+        <div class="top-controls">
+            <button id="profile-btn" class="profile-btn" title="Enter your basic information">👤 My Profile</button>
+            <button id="profile-guide-btn" class="profile-guide-btn" title="Let me help you fill in your profile">🤖 Profile Assistant</button>
+            <button id="reminder-btn" class="reminder-btn" title="Click to view reminders and toggle on/off">
+                <span class="reminder-icon">⏰</span>
+                <span class="reminder-text">Reminders</span>
+                <span id="reminder-status-badge" class="reminder-status-badge off">OFF</span>
+            </button>
+            <div class="voice-command-container">
+                <button id="voice-command-btn" class="voice-command-btn" title="Say 'doctor' or 'friend' to open chat">🎤 Voice Command</button>
+                <div id="voice-status" class="voice-status"></div>
+            </div>
+        </div>
+        <div class="characters-container">
+            <!-- 医生角色 -->
+            <div class="character-wrapper" id="doctor-wrapper">
+                <div class="character doctor-character">
+                    <div class="character-head">
+                        <div class="face">
+                            <div class="eyes">
+                                <div class="eye left-eye"></div>
+                                <div class="eye right-eye"></div>
+                            </div>
+                            <div class="mouth"></div>
+                        </div>
+                        <div class="doctor-cap"></div>
+                        <div class="stethoscope"></div>
+                    </div>
+                    <div class="character-body doctor-body">
+                        <div class="white-coat"></div>
+                        <div class="arms">
+                            <div class="arm left-arm"></div>
+                            <div class="arm right-arm"></div>
+                        </div>
+                    </div>
+                    <div class="character-legs">
+                        <div class="leg"></div>
+                        <div class="leg"></div>
+                    </div>
+                </div>
+                <div class="tooltip doctor-tooltip">Health Consultation</div>
+            </div>
+
+            <!-- 普通人角色 -->
+            <div class="character-wrapper" id="friend-wrapper">
+                <div class="character friend-character">
+                    <div class="character-head">
+                        <div class="face">
+                            <div class="eyes">
+                                <div class="eye left-eye"></div>
+                                <div class="eye right-eye"></div>
+                            </div>
+                            <div class="mouth smile"></div>
+                        </div>
+                        <div class="friend-hair"></div>
+                    </div>
+                    <div class="character-body friend-body">
+                        <div class="casual-shirt"></div>
+                        <div class="arms">
+                            <div class="arm left-arm"></div>
+                            <div class="arm right-arm"></div>
+                        </div>
+                    </div>
+                    <div class="character-legs">
+                        <div class="leg"></div>
+                        <div class="leg"></div>
+                    </div>
+                </div>
+                <div class="tooltip friend-tooltip">Have a Chat</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="suggestion-modal" class="modal">
+        <div class="modal-content chat-modal-content">
+            <span class="close-btn">&times;</span>
+            <h2 class="chat-title">Health Consultation</h2>
+            <div class="chat-container">
+                <div id="suggestion-messages" class="chat-messages">
+                    <div class="chat-message ai-message">
+                        <p>Hello! I'm your health advisor. Please tell me about your symptoms or discomfort, and I'll provide you with professional health advice. 😊</p>
+                    </div>
+                </div>
+                <div class="chat-input-area">
+                    <textarea id="disease-input" placeholder="E.g.: I've been feeling tired lately and my knees are a bit sore..." rows="3"></textarea>
+                    <div class="button-group">
+                        <button id="voice-input-btn" class="voice-btn" title="Click to speak">🎤</button>
+                        <button id="generate-btn">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="chat-modal" class="modal">
+        <div class="modal-content chat-modal-content">
+            <span class="close-btn chat-close-btn">&times;</span>
+            <h2 class="chat-title">Friendly Chat</h2>
+            <div class="chat-container">
+                <div id="chat-messages" class="chat-messages">
+                    <div class="chat-message ai-message">
+                        <p>Hello! I'm your AI friend. What would you like to talk about? We can chat about life, feelings, or anything you'd like to share. 😊</p>
+                    </div>
+                </div>
+                <div class="chat-input-area">
+                    <textarea id="chat-input" placeholder="Type your message here..." rows="3"></textarea>
+                    <div class="button-group">
+                        <button id="chat-voice-btn" class="voice-btn" title="Click to speak">🎤</button>
+                        <button id="send-btn">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 基本信息弹窗 -->
+    <div id="profile-modal" class="modal">
+        <div class="modal-content profile-modal-content">
+            <span class="close-btn profile-close-btn">&times;</span>
+            <h2 class="profile-title">📋 My Profile</h2>
+            <p class="profile-description">Please provide your basic information so I can give you more personalized advice.</p>
+            <form id="profile-form" class="profile-form">
+                <div class="form-group">
+                    <label for="user-name">Name:</label>
+                    <input type="text" id="user-name" placeholder="e.g., John Smith">
+                </div>
+                <div class="form-group">
+                    <label for="user-age">Age:</label>
+                    <input type="number" id="user-age" placeholder="e.g., 65" min="1" max="120">
+                </div>
+                <div class="form-group">
+                    <label for="user-gender">Gender:</label>
+                    <select id="user-gender">
+                        <option value="">Select...</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Prefer not to say</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="user-conditions">Existing Health Conditions:</label>
+                    <textarea id="user-conditions" placeholder="e.g., Diabetes, High blood pressure, Arthritis..." rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="user-allergies">Allergies:</label>
+                    <textarea id="user-allergies" placeholder="e.g., Penicillin, Peanuts, Pollen..." rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="user-medications">Current Medications:</label>
+                    <textarea id="user-medications" placeholder="e.g., Metformin, Lisinopril..." rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="medication-schedule">💊 Medication Schedule:</label>
+                    <p class="schedule-hint">Add your daily medication schedule below:</p>
+                    <div class="medication-schedule-container">
+                        <table id="medication-table" class="medication-table">
+                            <thead>
+                                <tr>
+                                    <th>Medication Name</th>
+                                    <th>Time</th>
+                                    <th>Dosage</th>
+                                    <th>Notes</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="medication-tbody">
+                                <!-- 药物记录将动态添加到这里 -->
+                            </tbody>
+                        </table>
+                        <button type="button" class="add-medication-btn" id="add-medication-btn">➕ Add Medication</button>
+                    </div>
+                </div>
+                <div class="form-buttons">
+                    <button type="submit" class="save-profile-btn">💾 Save Profile</button>
+                    <button type="button" class="clear-profile-btn">🗑️ Clear All</button>
+                </div>
+            </form>
+            <div id="profile-status" class="profile-status"></div>
+        </div>
+    </div>
+
+    <!-- 服药提醒列表弹窗 -->
+    <div id="reminder-modal" class="modal">
+        <div class="modal-content reminder-modal-content">
+            <span class="close-btn reminder-close-btn">&times;</span>
+            <h2 class="reminder-title">⏰ Medication Reminders</h2>
+            <p class="reminder-description">Your daily medication schedule. Reminders will alert you at scheduled times.</p>
+            
+            <div id="reminder-list" class="reminder-list">
+                <!-- 服药提醒列表将动态生成 -->
+            </div>
+            
+            <div class="reminder-controls">
+                <button id="enable-reminders-btn" class="enable-reminders-btn">🔔 Enable Reminders</button>
+                <p class="reminder-note">Note: Please allow notifications in your browser when prompted.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 服药提醒通知弹窗 -->
+    <div id="medication-alert" class="medication-alert" style="display: none;">
+        <div class="medication-alert-content">
+            <div class="alert-header">
+                <span class="alert-icon">💊</span>
+                <h3 class="alert-title">Time to Take Your Medication!</h3>
+            </div>
+            <div class="alert-body">
+                <p class="alert-medication-name" id="alert-medication-name"></p>
+                <p class="alert-medication-info" id="alert-medication-info"></p>
+                <p class="alert-time" id="alert-time"></p>
+            </div>
+            <div class="alert-actions">
+                <button id="taken-btn" class="taken-btn">✓ Taken</button>
+                <button id="snooze-btn" class="snooze-btn">⏰ Snooze 10 min</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 引导机器人弹窗 -->
+    <div id="profile-guide-modal" class="modal">
+        <div class="modal-content chat-modal-content">
+            <span class="close-btn profile-guide-close-btn">&times;</span>
+            <h2 class="chat-title">🤖 Profile Assistant</h2>
+            <p class="guide-subtitle">Let me help you set up your profile through conversation</p>
+            <div class="chat-container">
+                <div id="guide-messages" class="chat-messages">
+                    <div class="chat-message ai-message">
+                        <p>Hi! I'm your profile assistant. I'll help you set up your health profile through a friendly conversation. Let's start with your name - what should I call you?</p>
+                    </div>
+                </div>
+                <div class="chat-input-area">
+                    <textarea id="guide-input" placeholder="Type your answer here..." rows="2"></textarea>
+                    <div class="button-group">
+                        <button id="guide-voice-btn" class="voice-btn" title="Click to speak">🎤</button>
+                        <button id="guide-send-btn">Send</button>
+                    </div>
+                </div>
+            </div>
+            <div class="guide-progress">
+                <div class="progress-bar">
+                    <div id="guide-progress-fill" class="progress-fill"></div>
+                </div>
+                <p id="guide-progress-text" class="progress-text">Step 1 of 7: Name</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

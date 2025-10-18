@@ -1,0 +1,90 @@
+from flask import Flask, render_template, request, jsonify
+from openai import OpenAI
+
+# 初始化 Flask 应用
+app = Flask(__name__)
+
+def call_qwen_max_api(disease_text):
+    """
+    这是一个调用通义千问（Qwen Max）API的占位函数。
+    您需要在这里填写真实的API调用逻辑。
+
+    Args:
+        disease_text: 从前端接收到的疾病或症状描述。
+
+    Returns:
+        一个包含健康建议的字符串。
+    """
+    # 【【【请在此处填写您的API密钥和完整的API调用逻辑】】】
+    # 1. 设置您的 API Key。
+    api_key = "sk-dec3caaa6d6d4350963f5ceb97dce549"
+    
+    # 2. 构建 Prompt。
+    #    一个好的 prompt 对模型输出质量至关重要。
+    prompt = f"""
+    你是一位专业的、富有同情心的老年人健康顾问。
+    请根据以下用户描述的症状或疾病，为老年人提供一些通用、安全、易于理解的健康建议。
+    建议应包括饮食、休息、适度活动和何时应该去看医生等方面。
+    你的回答应该简洁、清晰、分点列出，并且语气要温和。
+    请注意：你的建议不能替代专业医疗诊断。在回答的最后，请务必加上一句：“重要提示：以上建议仅供参考，不能替代专业医疗诊断。如果身体持续不适，请务un必咨询医生。”
+    
+    用户描述: "{disease_text}"
+    
+    你的建议:
+    """
+
+    # 3. 使用 requests 或相关的 SDK 调用 API。
+    # response = requests.post(
+    #     "QWEN_MAX_API_ENDPOINT",
+    #     headers={"Authorization": f"Bearer {api_key}"},
+    #     json={"model": "qwen-max", "prompt": prompt}
+    # )
+    
+    # 4. 解析返回的 JSON 并提取建议文本。
+    # suggestion = response.json()['choices'][0]['text']
+
+    # 检查输入
+    if not disease_text or disease_text.strip() == "":
+        return "请输入一些症状或疾病描述，以便我为您提供建议。"
+        
+    suggestion = f"""针对您提到的“{disease_text}”，我们为您提供以下初步建议：
+
+1.  **饮食调理**: 建议保持饮食清淡，多摄入易于消化的食物，如粥、汤羹和蒸煮的蔬菜。避免油腻、辛辣和生冷的食物。
+
+2.  **充足休息**: 保证每日7-8小时的睡眠，避免熬夜。午后可适当小憩30分钟，有助于精力恢复。
+
+3.  **适度活动**: 如果身体允许，可以进行一些缓和的运动，如散步、打太极拳。避免剧烈运动。
+
+4.  **密切观察**: 注意观察症状的变化。如果症状加重或出现新的不适，请及时记录。
+
+重要提示：以上建议仅供参考，不能替代专业医疗诊断。如果身体持续不适，请务必咨询医生。
+"""
+    # --- 模拟代码结束 ---
+
+    return suggestion
+
+
+@app.route('/')
+def index():
+    """渲染主页"""
+    return render_template('index.html')
+
+@app.route('/get_suggestion', methods=['POST'])
+def get_suggestion():
+    """接收前端请求并返回模型生成的建议"""
+    try:
+        data = request.get_json()
+        disease_text = data.get('disease', '')
+        
+        # 调用（当前为模拟的）AI模型API
+        suggestion = call_qwen_max_api(disease_text)
+        
+        return jsonify({'suggestion': suggestion})
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({'suggestion': '服务器发生错误，请稍后再试。'}), 500
+
+if __name__ == '__main__':
+    # 启动 Flask 应用
+    # 在生产环境中，应使用 Gunicorn 或 uWSGI 等部署
+    app.run(debug=True)
