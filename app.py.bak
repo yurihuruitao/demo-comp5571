@@ -17,7 +17,7 @@ def call_qwen_max_api(disease_text):
     """
     # 【【【请在此处填写您的API密钥和完整的API调用逻辑】】】
     # 1. 设置您的 API Key。
-    api_key = "sk-dec3caaa6d6d4350963f5ceb97dce549"
+    
     
     # 2. 构建 Prompt。
     #    一个好的 prompt 对模型输出质量至关重要。

@@ -11,7 +11,7 @@ import json
 app = Flask(__name__)
 
 # 设置阿里云API Key
-dashscope.api_key = "sk-dec3caaa6d6d4350963f5ceb97dce549"
+dashscope.api_key = os.getenv("DASHSCOPE_API_KEY")
 
 # 创建音频文件存储目录
 AUDIO_DIR = os.path.join(app.root_path, "static", "audio")
@@ -140,7 +140,7 @@ def call_chat_api(user_message, user_profile="", language="en"):
         包含回复内容和可能的函数调用的字典。
     """
     # 1. 设置API配置
-    api_key = "sk-dec3caaa6d6d4350963f5ceb97dce549"
+    api_key = os.getenv("DASHSCOPE_API_KEY")
     base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
     try:
@@ -239,7 +239,7 @@ def call_qwen_max_api(disease_text, user_profile="", language="en"):
             return {"suggestion": "Please provide some symptoms or condition descriptions so I can give you advice."}
 
     # 1. 设置您的 API Key 和 Base URL
-    api_key = "sk-dec3caaa6d6d4350963f5ceb97dce549"
+    api_key = os.getenv("DASHSCOPE_API_KEY")
     base_url = (
         "https://dashscope.aliyuncs.com/compatible-mode/v1"  # 通义千问的OpenAI兼容端点
     )
@@ -443,7 +443,7 @@ def profile_guide():
         }
 
         # 使用AI来解析用户回答
-        api_key = "sk-dec3caaa6d6d4350963f5ceb97dce549"
+        api_key = os.getenv("DASHSCOPE_API_KEY")
         base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         client = OpenAI(api_key=api_key, base_url=base_url)
 

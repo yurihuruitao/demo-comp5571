@@ -24,7 +24,7 @@ Flask-based web application providing AI-powered health suggestions for elderly 
 
 **Qwen Max API Configuration**:
 ```python
-api_key = "sk-dec3caaa6d6d4350963f5ceb97dce549"  # Hardcoded in app.py
+# Hardcoded in app.py
 base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 model = "qwen-max"
 ```
