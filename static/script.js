@@ -1,4 +1,301 @@
+// ============ 翻译对象 ============
+const translations = {
+    en: {
+        // 主页面
+        title: "AI Health Assistant for Elders",
+        voiceCommand: "🎤 Voice Command",
+        voiceStatus: "Say \"doctor\" or \"friend\"...",
+        languageToggle: "中文",
+        profileBtn: "👤 My Profile",
+        profileGuideBtn: "🤖 Profile Assistant",
+        reminderBtn: "⏰ Medication Reminder",
+        reminderStatusOn: "ON",
+        reminderStatusOff: "OFF",
+        doctorTitle: "Health Consultation",
+        doctorDesc: "Professional health advisor",
+        friendTitle: "Friendly Chat",
+        friendDesc: "Emotional support companion",
+        
+        // 医生对话框
+        doctorModalTitle: "🩺 Health Consultation",
+        doctorWelcome: "Hello! I'm your health advisor. Please tell me about your symptoms or discomfort, and I'll provide you with professional health advice. 😊",
+        doctorPlaceholder: "Describe your symptoms here...",
+        generateBtn: "Send",
+        analyzing: "Analyzing...",
+        playAudio: "🔊 Play Audio",
+        pauseAudio: "⏸️ Pause Audio",
+        
+        // 朋友聊天框
+        chatModalTitle: "💬 Friendly Chat",
+        chatWelcome: "Hello! I'm your AI friend. What would you like to talk about? We can chat about life, feelings, or anything you'd like to share. 😊",
+        chatPlaceholder: "Type your message...",
+        sendBtn: "Send",
+        replying: "Replying...",
+        
+        // 个人信息弹窗
+        profileModalTitle: "👤 My Health Profile",
+        userName: "Name",
+        userAge: "Age",
+        userGender: "Gender",
+        genderMale: "Male",
+        genderFemale: "Female",
+        genderOther: "Other",
+        userConditions: "Existing Health Conditions",
+        userAllergies: "Known Allergies",
+        userMedications: "Current Medications",
+        medicationScheduleTitle: "💊 Medication Schedule",
+        medName: "Medication Name",
+        medTime: "Time",
+        medDosage: "Dosage",
+        medNotes: "Notes",
+        addMedicationBtn: "➕ Add Medication",
+        deleteBtn: "🗑️ Delete",
+        saveProfileBtn: "💾 Save Profile",
+        clearProfileBtn: "🗑️ Clear All",
+        profileSaveSuccess: "✓ Profile saved successfully!",
+        profileClearSuccess: "✓ Profile cleared!",
+        profileClearConfirm: "Are you sure you want to clear all your profile information?",
+        
+        // 引导机器人
+        guideModalTitle: "🤖 Profile Setup Assistant",
+        guideProgressText: "Step {step} of 7: {label}",
+        guideStepName: "Name",
+        guideStepAge: "Age",
+        guideStepGender: "Gender",
+        guideStepConditions: "Health Conditions",
+        guideStepAllergies: "Allergies",
+        guideStepMedications: "Medications",
+        guideStepConfirmation: "Confirmation",
+        guidePlaceholder: "Type your answer...",
+        guideSendBtn: "Send",
+        guideProcessing: "Processing...",
+        guideSaveBtn: "💾 Save Profile",
+        guideRestartBtn: "🔄 Start Over",
+        guideSaveSuccess: "✓ Profile saved successfully!",
+        guideInitialMessage: "Hi! I'm your profile assistant. I'll help you set up your health profile through a friendly conversation. Let's start with your name - what should I call you?",
+        guideRestartMessage: "Let's start over! What's your name?",
+        
+        // 服药提醒
+        reminderModalTitle: "⏰ Medication Reminders",
+        enableRemindersBtn: "🔔 Enable Reminders",
+        disableRemindersBtn: "🔕 Disable Reminders",
+        reminderEmptyTitle: "No medication schedule found.",
+        reminderEmptyDesc: "Please add your medications in the Profile page first.",
+        reminderNoMeds: "No medications in your schedule.",
+        reminderAddPrompt: "Click \"👤 My Profile\" to add medications.",
+        reminderNoTime: "No time set",
+        alertTitle: "💊 Medication Reminder",
+        alertTaken: "✓ Taken",
+        alertSnooze: "⏰ Snooze 10min",
+        
+        // 错误消息
+        errorNetwork: "Sorry, there was a network issue. Please try again later.",
+        errorVoiceNoSpeech: "No speech detected. Please try again.",
+        errorVoiceDenied: "Microphone access denied. Please allow microphone access in your browser settings.",
+        errorVoiceGeneric: "Voice recognition error: ",
+        
+        // 通知消息
+        notifMedicationAdded: "✓ Medication reminder added: ",
+        notifRemindersEnabled: "✓ Reminders enabled for {count} medication(s)!",
+        notifRemindersDisabled: "Reminders disabled.",
+        notifNoProfile: "Please add your medication schedule in Profile first.",
+        notifNoMedications: "No medications found in your schedule.",
+        notifNoTimes: "Please add times to your medications in Profile."
+    },
+    zh: {
+        // 主页面
+        title: "老年人AI健康助手",
+        voiceCommand: "🎤 语音命令",
+        voiceStatus: "说\"医生\"或\"朋友\"...",
+        languageToggle: "English",
+        profileBtn: "👤 我的档案",
+        profileGuideBtn: "🤖 档案助手",
+        reminderBtn: "⏰ 服药提醒",
+        reminderStatusOn: "开启",
+        reminderStatusOff: "关闭",
+        doctorTitle: "健康咨询",
+        doctorDesc: "专业健康顾问",
+        friendTitle: "友好聊天",
+        friendDesc: "情感支持伙伴",
+        
+        // 医生对话框
+        doctorModalTitle: "🩺 健康咨询",
+        doctorWelcome: "您好！我是您的健康顾问。请告诉我您的症状或不适，我会为您提供专业的健康建议。😊",
+        doctorPlaceholder: "请在这里描述您的症状...",
+        generateBtn: "发送",
+        analyzing: "分析中...",
+        playAudio: "🔊 播放语音",
+        pauseAudio: "⏸️ 暂停语音",
+        
+        // 朋友聊天框
+        chatModalTitle: "💬 友好聊天",
+        chatWelcome: "您好！我是您的AI朋友。您想聊些什么呢？我们可以聊聊生活、感受，或者任何您想分享的事情。😊",
+        chatPlaceholder: "输入您的消息...",
+        sendBtn: "发送",
+        replying: "回复中...",
+        
+        // 个人信息弹窗
+        profileModalTitle: "👤 我的健康档案",
+        userName: "姓名",
+        userAge: "年龄",
+        userGender: "性别",
+        genderMale: "男",
+        genderFemale: "女",
+        genderOther: "其他",
+        userConditions: "现有健康状况",
+        userAllergies: "已知过敏",
+        userMedications: "当前药物",
+        medicationScheduleTitle: "💊 用药时间表",
+        medName: "药物名称",
+        medTime: "时间",
+        medDosage: "剂量",
+        medNotes: "备注",
+        addMedicationBtn: "➕ 添加药物",
+        deleteBtn: "🗑️ 删除",
+        saveProfileBtn: "💾 保存档案",
+        clearProfileBtn: "🗑️ 清除所有",
+        profileSaveSuccess: "✓ 档案保存成功！",
+        profileClearSuccess: "✓ 档案已清除！",
+        profileClearConfirm: "确定要清除所有档案信息吗？",
+        
+        // 引导机器人
+        guideModalTitle: "🤖 档案设置助手",
+        guideProgressText: "第 {step} 步，共 7 步：{label}",
+        guideStepName: "姓名",
+        guideStepAge: "年龄",
+        guideStepGender: "性别",
+        guideStepConditions: "健康状况",
+        guideStepAllergies: "过敏史",
+        guideStepMedications: "用药情况",
+        guideStepConfirmation: "确认",
+        guidePlaceholder: "输入您的答案...",
+        guideSendBtn: "发送",
+        guideProcessing: "处理中...",
+        guideSaveBtn: "💾 保存档案",
+        guideRestartBtn: "🔄 重新开始",
+        guideSaveSuccess: "✓ 档案保存成功！",
+        guideInitialMessage: "您好！我是您的档案助手。我将通过友好的对话帮助您设置健康档案。让我们从您的姓名开始——我应该怎么称呼您？",
+        guideRestartMessage: "让我们重新开始！您叫什么名字？",
+        
+        // 服药提醒
+        reminderModalTitle: "⏰ 服药提醒",
+        enableRemindersBtn: "🔔 开启提醒",
+        disableRemindersBtn: "🔕 关闭提醒",
+        reminderEmptyTitle: "未找到用药时间表。",
+        reminderEmptyDesc: "请先在档案页面添加您的药物。",
+        reminderNoMeds: "您的时间表中没有药物。",
+        reminderAddPrompt: "点击\"👤 我的档案\"添加药物。",
+        reminderNoTime: "未设置时间",
+        alertTitle: "💊 服药提醒",
+        alertTaken: "✓ 已服用",
+        alertSnooze: "⏰ 延迟10分钟",
+        
+        // 错误消息
+        errorNetwork: "抱歉，网络出现问题。请稍后再试。",
+        errorVoiceNoSpeech: "未检测到语音。请重试。",
+        errorVoiceDenied: "麦克风访问被拒绝。请在浏览器设置中允许麦克风访问。",
+        errorVoiceGeneric: "语音识别错误：",
+        
+        // 通知消息
+        notifMedicationAdded: "✓ 已添加服药提醒：",
+        notifRemindersEnabled: "✓ 已为 {count} 种药物启用提醒！",
+        notifRemindersDisabled: "提醒已关闭。",
+        notifNoProfile: "请先在档案中添加您的用药时间表。",
+        notifNoMedications: "您的时间表中未找到药物。",
+        notifNoTimes: "请在档案中为您的药物添加时间。"
+    }
+};
+
+// 当前语言
+let currentLanguage = localStorage.getItem('preferredLanguage') || 'en';
+
+// 翻译函数
+function translate(key) {
+    return translations[currentLanguage][key] || translations.en[key] || key;
+}
+
+// 替换占位符
+function translateWithParams(key, params) {
+    let text = translate(key);
+    for (const [param, value] of Object.entries(params)) {
+        text = text.replace(`{${param}}`, value);
+    }
+    return text;
+}
+
+// 切换语言
+function switchLanguage() {
+    currentLanguage = currentLanguage === 'en' ? 'zh' : 'en';
+    localStorage.setItem('preferredLanguage', currentLanguage);
+    updateUILanguage();
+}
+
+// 更新整个UI的语言
+function updateUILanguage() {
+    // 更新所有带data-lang属性的元素
+    document.querySelectorAll('[data-lang]').forEach(element => {
+        const key = element.getAttribute('data-lang');
+        
+        if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
+            if (element.type === 'text' || element.type === 'number' || element.tagName === 'TEXTAREA') {
+                element.placeholder = translate(key);
+            }
+        } else if (element.tagName === 'OPTION') {
+            element.textContent = translate(key);
+        } else {
+            // 保留HTML标签，只替换文本
+            const htmlContent = element.innerHTML;
+            if (htmlContent.includes('<')) {
+                // 如果包含HTML标签，只替换文本节点
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = htmlContent;
+                if (tempDiv.childNodes.length === 1 && tempDiv.childNodes[0].nodeType === Node.TEXT_NODE) {
+                    element.textContent = translate(key);
+                } else {
+                    // 复杂情况：尝试智能替换
+                    const firstTextNode = Array.from(tempDiv.childNodes).find(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+                    if (firstTextNode) {
+                        firstTextNode.textContent = translate(key);
+                        element.innerHTML = tempDiv.innerHTML;
+                    }
+                }
+            } else {
+                element.textContent = translate(key);
+            }
+        }
+    });
+    
+    // 更新语言切换按钮
+    const languageText = document.getElementById('language-text');
+    if (languageText) {
+        languageText.textContent = translate('languageToggle');
+    }
+    
+    // 更新初始欢迎消息
+    const doctorInitialMsg = document.getElementById('doctor-initial-message');
+    if (doctorInitialMsg) {
+        doctorInitialMsg.textContent = translate('doctorWelcome');
+    }
+    
+    const chatInitialMsg = document.getElementById('chat-initial-message');
+    if (chatInitialMsg) {
+        chatInitialMsg.textContent = translate('chatWelcome');
+    }
+    
+    // 更新页面标题
+    document.title = translate('title');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+
+    // 初始化语言
+    updateUILanguage();
+    
+    // 绑定语言切换按钮
+    const languageToggleBtn = document.getElementById('language-toggle-btn');
+    if (languageToggleBtn) {
+        languageToggleBtn.addEventListener('click', switchLanguage);
+    }
 
     // 音频播放器
     let currentAudio = null;
@@ -319,9 +616,10 @@ document.addEventListener('DOMContentLoaded', () => {
     profileGuideBtn.onclick = () => {
         currentStep = 1;
         collectedData = { name: '', age: '', gender: '', conditions: '', allergies: '', medications: '' };
+        const initialMessage = translate('guideInitialMessage');
         guideMessages.innerHTML = `
             <div class="chat-message ai-message">
-                <p>Hi! I'm your profile assistant. I'll help you set up your health profile through a friendly conversation. Let's start with your name - what should I call you?</p>
+                <p>${initialMessage}</p>
             </div>
         `;
         updateGuideProgress();
@@ -346,7 +644,25 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateGuideProgress() {
         const progress = (currentStep / 7) * 100;
         guideProgressFill.style.width = progress + '%';
-        guideProgressText.textContent = `Step ${currentStep} of 7: ${stepLabels[currentStep]}`;
+        
+        // 步骤标签映射
+        const stepLabelKeys = {
+            1: 'guideStepName',
+            2: 'guideStepAge',
+            3: 'guideStepGender',
+            4: 'guideStepConditions',
+            5: 'guideStepAllergies',
+            6: 'guideStepMedications',
+            7: 'guideStepConfirmation'
+        };
+        
+        const stepLabel = translate(stepLabelKeys[currentStep]);
+        
+        if (currentLanguage === 'zh') {
+            guideProgressText.textContent = `第 ${currentStep} 步，共 7 步：${stepLabel}`;
+        } else {
+            guideProgressText.textContent = `Step ${currentStep} of 7: ${stepLabel}`;
+        }
     }
     
     // 发送引导消息
@@ -369,7 +685,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // 禁用发送按钮
         guideSendBtn.disabled = true;
-        guideSendBtn.textContent = 'Processing...';
+        guideSendBtn.textContent = translate('guideProcessing');
         
         try {
             const response = await fetch('/profile_guide', {
@@ -380,7 +696,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({
                     message: messageText,
                     step: currentStep,
-                    collectedData: collectedData
+                    collectedData: collectedData,
+                    language: currentLanguage  // 发送当前语言设置
                 })
             });
             
@@ -446,7 +763,7 @@ document.addEventListener('DOMContentLoaded', () => {
             guideMessages.scrollTop = guideMessages.scrollHeight;
         } finally {
             guideSendBtn.disabled = false;
-            guideSendBtn.textContent = 'Send';
+            guideSendBtn.textContent = translate('guideSendBtn');
         }
     };
     
@@ -521,9 +838,10 @@ document.addEventListener('DOMContentLoaded', () => {
     window.restartGuide = function() {
         currentStep = 1;
         collectedData = { name: '', age: '', gender: '', conditions: '', allergies: '', medications: '' };
+        const restartMessage = translate('guideRestartMessage');
         guideMessages.innerHTML = `
             <div class="chat-message ai-message">
-                <p>Let's start over! What's your name?</p>
+                <p>${restartMessage}</p>
             </div>
         `;
         updateGuideProgress();
@@ -618,12 +936,12 @@ document.addEventListener('DOMContentLoaded', () => {
             reminderBtn.classList.add('active');
             reminderStatusBadge.classList.remove('off');
             reminderStatusBadge.classList.add('on');
-            reminderStatusBadge.textContent = 'ON';
+            reminderStatusBadge.textContent = translate('reminderStatusOn');
         } else {
             reminderBtn.classList.remove('active');
             reminderStatusBadge.classList.remove('on');
             reminderStatusBadge.classList.add('off');
-            reminderStatusBadge.textContent = 'OFF';
+            reminderStatusBadge.textContent = translate('reminderStatusOff');
         }
     }
     
@@ -836,13 +1154,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 remindersEnabled = true;
                 updateReminderButtonUI(true);
                 saveReminderStatus(true);
-                enableRemindersBtn.textContent = '🔕 Disable Reminders';
+                enableRemindersBtn.textContent = translate('disableRemindersBtn');
                 enableRemindersBtn.classList.add('enabled');
                 
                 const profile = JSON.parse(localStorage.getItem('userProfile'));
                 const count = profile.medicationSchedule.filter(med => med.time && med.time.trim() !== '').length;
                 
-                alert(`✓ Reminders enabled for ${count} medication(s)!${notificationPermission ? '\nBrowser notifications enabled.' : '\nBrowser notifications not available.'}`);
+                alert(translateWithParams('notifRemindersEnabled', {count}) + (notificationPermission ? '\nBrowser notifications enabled.' : '\nBrowser notifications not available.'));
             }
         } else {
             // 禁用提醒
@@ -850,10 +1168,10 @@ document.addEventListener('DOMContentLoaded', () => {
             remindersEnabled = false;
             updateReminderButtonUI(false);
             saveReminderStatus(false);
-            enableRemindersBtn.textContent = '🔔 Enable Reminders';
+            enableRemindersBtn.textContent = translate('enableRemindersBtn');
             enableRemindersBtn.classList.remove('enabled');
             
-            alert('Reminders disabled.');
+            alert(translate('notifRemindersDisabled'));
         }
     };
     
@@ -943,7 +1261,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 禁用发送按钮
         generateBtn.disabled = true;
-        generateBtn.textContent = 'Analyzing...';
+        generateBtn.textContent = translate('analyzing');
 
         try {
             const response = await fetch('/get_suggestion', {
@@ -953,7 +1271,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
                 body: JSON.stringify({ 
                     disease: diseaseText,
-                    userProfile: getUserProfileContext()
+                    userProfile: getUserProfileContext(),
+                    language: currentLanguage  // 发送当前语言设置
                 })
             });
 
@@ -1041,7 +1360,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             // 恢复按钮状态
             generateBtn.disabled = false;
-            generateBtn.textContent = 'Send';
+            generateBtn.textContent = translate('generateBtn');
         }
     };
 
@@ -1075,7 +1394,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 禁用发送按钮
         sendBtn.disabled = true;
-        sendBtn.textContent = 'Replying...';
+        sendBtn.textContent = translate('replying');
 
         try {
             const response = await fetch('/chat', {
@@ -1085,7 +1404,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
                 body: JSON.stringify({ 
                     message: messageText,
-                    userProfile: getUserProfileContext()
+                    userProfile: getUserProfileContext(),
+                    language: currentLanguage  // 发送当前语言设置
                 })
             });
 
@@ -1172,7 +1492,7 @@ document.addEventListener('DOMContentLoaded', () => {
             chatMessages.scrollTop = chatMessages.scrollHeight;
         } finally {
             sendBtn.disabled = false;
-            sendBtn.textContent = 'Send';
+            sendBtn.textContent = translate('sendBtn');
         }
     };
 
