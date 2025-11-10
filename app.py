@@ -25,7 +25,7 @@ except Exception as e:
 
 # ========= TTS 运行开关与长度上限（默认关闭以防线上内存/超时） =========
 ENABLE_TTS = 1
-TTS_MAX_CHARS = int(os.getenv("TTS_MAX_CHARS", "240"))
+TTS_MAX_CHARS = int(os.getenv("TTS_MAX_CHARS", "1000"))
 # ===============================================================
 
 # 定义 Function Call 工具
