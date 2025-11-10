@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify, send_file
 from openai import OpenAI
 import dashscope
-from dashscope.audio.tts_v2 import SpeechSynthesizer
+from dashscope.audio.tts import SpeechSynthesizer as AliTTS
 import os
 import uuid
 import re
@@ -22,6 +22,11 @@ except Exception as e:
     print(f"Warning: Could not create audio directory (normal on serverless): {e}")
     AUDIO_DIR = "/tmp/audio"
     os.makedirs(AUDIO_DIR, exist_ok=True)
+
+# ========= TTS 运行开关与长度上限（默认关闭以防线上内存/超时） =========
+ENABLE_TTS = 1
+TTS_MAX_CHARS = int(os.getenv("TTS_MAX_CHARS", "240"))
+# ===============================================================
 
 # 定义 Function Call 工具
 TOOLS = [
@@ -93,6 +98,11 @@ def text_to_speech(text):
         音频文件的URL路径,如果失败返回None。
     """
     try:
+        # 按需关闭 TTS，避免线上内存/超时风险
+        if not ENABLE_TTS:
+            print("[TTS] 已禁用，跳过生成（设置 ENABLE_TTS=1 可开启）")
+            return None
+
         # 清理文本,移除标点符号
         clean_text = clean_text_for_speech(text)
 
@@ -100,25 +110,35 @@ def text_to_speech(text):
             print("清理后的文本为空,跳过语音合成")
             return None
 
+        # 控制合成长度，避免长文本导致内存/耗时峰值
+        if len(clean_text) > TTS_MAX_CHARS:
+            print(f"[TTS] 文本过长，已从 {len(clean_text)} 裁剪为 {TTS_MAX_CHARS}")
+            clean_text = clean_text[:TTS_MAX_CHARS]
+
         print(f"原始文本长度: {len(text)}, 清理后长度: {len(clean_text)}")
 
         # 生成唯一的文件名
         audio_filename = f"{uuid.uuid4()}.mp3"
         audio_path = os.path.join(AUDIO_DIR, audio_filename)
 
-        # 使用DashScope的语音合成API
-        synthesizer = SpeechSynthesizer(model="cosyvoice-v1", voice="longxiaochun")
+        # 使用会直接产出压缩音频（MP3）的 DashScope TTS，降低内存占用
+        result = AliTTS.call(
+            model="sambert-zhiqi-v1",
+            text=clean_text,
+            sample_rate=24000,
+            rate=1.0,
+            format="mp3",
+        )
 
-        # 合成语音 - 使用清理后的文本
-        audio_data = synthesizer.call(clean_text)
+        audio_bytes = result.get_audio_data() if result else None
 
         # 检查是否成功生成音频数据
-        if audio_data and isinstance(audio_data, bytes):
+        if audio_bytes:
             # 保存音频文件
             with open(audio_path, "wb") as f:
-                f.write(audio_data)
+                f.write(audio_bytes)
 
-            print(f"语音合成成功: {audio_filename}")
+            print(f"语音合成成功: {audio_filename} (size={len(audio_bytes)} bytes)")
             # 返回音频URL
             return f"/static/audio/{audio_filename}"
         else:
@@ -146,7 +166,9 @@ def call_chat_api(user_message, user_profile="", language="en"):
         包含回复内容和可能的函数调用的字典。
     """
     # 1. 设置API配置
-    api_key = os.getenv("DASHSCOPE_API_KEY", )
+    api_key = os.getenv(
+        "DASHSCOPE_API_KEY",
+    )
     base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
     try:
@@ -184,7 +206,7 @@ When the user mentions wanting to set up medication reminders, or asks you to he
             tools=TOOLS,
             tool_choice="auto",
             temperature=0.8,
-            max_tokens=500,
+            max_tokens=400,
         )
 
         # 5. 检查是否有函数调用
@@ -203,7 +225,7 @@ When the user mentions wanting to set up medication reminders, or asks you to he
                 default_reply = f"好的！我会帮你设置{function_args.get('medication_name', '药物')}的提醒，时间是{function_args.get('time', '指定时间')}。✓"
             else:
                 default_reply = f"Sure! I'll help you set up a reminder for {function_args.get('medication_name', 'your medication')} at {function_args.get('time', 'the specified time')}. ✓"
-            
+
             return {
                 "reply": response_message.content or default_reply,
                 "function_call": {"name": function_name, "arguments": function_args},
@@ -222,7 +244,9 @@ When the user mentions wanting to set up medication reminders, or asks you to he
         if language == "zh":
             return {"reply": "抱歉，我刚才走神了。你能再说一遍吗？"}
         else:
-            return {"reply": "Sorry, I got distracted for a moment. Could you say that again?"}
+            return {
+                "reply": "Sorry, I got distracted for a moment. Could you say that again?"
+            }
 
 
 def call_qwen_max_api(disease_text, user_profile="", language="en"):
@@ -242,10 +266,14 @@ def call_qwen_max_api(disease_text, user_profile="", language="en"):
         if language == "zh":
             return {"suggestion": "请提供一些症状或病情描述，这样我才能给您建议。"}
         else:
-            return {"suggestion": "Please provide some symptoms or condition descriptions so I can give you advice."}
+            return {
+                "suggestion": "Please provide some symptoms or condition descriptions so I can give you advice."
+            }
 
     # 1. 设置您的 API Key 和 Base URL
-    api_key = os.getenv("DASHSCOPE_API_KEY", )
+    api_key = os.getenv(
+        "DASHSCOPE_API_KEY",
+    )
     base_url = (
         "https://dashscope.aliyuncs.com/compatible-mode/v1"  # 通义千问的OpenAI兼容端点
     )
@@ -273,7 +301,7 @@ When the user mentions wanting to set up medication reminders, or asks you to he
             user_content = f"我有以下症状或病情：{disease_text}。请给我提供健康建议。"
         else:
             user_content = f"I have the following symptoms or condition: {disease_text}. Please provide me with health advice."
-        
+
         messages = [
             {"role": "system", "content": system_content},
             {"role": "user", "content": user_content},
@@ -289,7 +317,7 @@ When the user mentions wanting to set up medication reminders, or asks you to he
             tools=TOOLS,
             tool_choice="auto",
             temperature=0.7,
-            max_tokens=3000,
+            max_tokens=800,
         )
 
         # 5. 检查是否有函数调用
@@ -308,7 +336,7 @@ When the user mentions wanting to set up medication reminders, or asks you to he
                 default_suggestion = f"好的！我会帮你设置{function_args.get('medication_name', '药物')}的提醒，时间是{function_args.get('time', '指定时间')}。根据你的症状，记得按时服用这种药物。✓"
             else:
                 default_suggestion = f"Sure! I'll help you set up a reminder for {function_args.get('medication_name', 'your medication')} at {function_args.get('time', 'the specified time')}. Based on your symptoms, remember to take this medication as prescribed. ✓"
-            
+
             return {
                 "suggestion": response_message.content or default_suggestion,
                 "function_call": {"name": function_name, "arguments": function_args},
@@ -322,11 +350,14 @@ When the user mentions wanting to set up medication reminders, or asks you to he
     except Exception as e:
         print(f"医生API调用失败: {e}")
         import traceback
+
         traceback.print_exc()
         if language == "zh":
             return {"suggestion": f"抱歉，调用AI服务时出现错误：{str(e)}。请稍后再试。"}
         else:
-            return {"suggestion": f"Sorry, an error occurred while calling the AI service: {str(e)}. Please try again later."}
+            return {
+                "suggestion": f"Sorry, an error occurred while calling the AI service: {str(e)}. Please try again later."
+            }
 
 
 @app.route("/")
@@ -339,6 +370,7 @@ def index():
 def serve_static(filename):
     """显式提供静态文件 - Vercel 备用方案"""
     from flask import send_from_directory
+
     return send_from_directory("static", filename)
 
 
@@ -346,13 +378,16 @@ def serve_static(filename):
 def health_check():
     """健康检查端点 - 用于诊断 Vercel 部署"""
     import sys
-    return jsonify({
-        "status": "ok",
-        "message": "Flask app is running on Vercel",
-        "python_version": sys.version,
-        "has_api_key": bool(os.getenv("DASHSCOPE_API_KEY")),
-        "routes": [str(rule) for rule in app.url_map.iter_rules()]
-    })
+
+    return jsonify(
+        {
+            "status": "ok",
+            "message": "Flask app is running on Vercel",
+            "python_version": sys.version,
+            "has_api_key": bool(os.getenv("DASHSCOPE_API_KEY")),
+            "routes": [str(rule) for rule in app.url_map.iter_rules()],
+        }
+    )
 
 
 @app.route("/get_suggestion", methods=["POST"])
@@ -386,6 +421,7 @@ def get_suggestion():
     except Exception as e:
         print(f"Error: {e}")
         import traceback
+
         traceback.print_exc()
         return (
             jsonify({"suggestion": "Server error occurred. Please try again later."}),
@@ -455,7 +491,9 @@ def profile_guide():
             if language == "zh":
                 return jsonify({"reply": "我没听清。你能再说一遍吗？"})
             else:
-                return jsonify({"reply": "I didn't catch that. Could you tell me again?"})
+                return jsonify(
+                    {"reply": "I didn't catch that. Could you tell me again?"}
+                )
 
         # 根据步骤生成引导问题
         guide_prompts = {
@@ -465,11 +503,13 @@ def profile_guide():
             4: "any existing health conditions you have",
             5: "any allergies you have",
             6: "any medications you're currently taking",
-            7: "confirmation"
+            7: "confirmation",
         }
 
         # 使用AI来解析用户回答
-        api_key = os.getenv("DASHSCOPE_API_KEY", )
+        api_key = os.getenv(
+            "DASHSCOPE_API_KEY",
+        )
         base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         client = OpenAI(api_key=api_key, base_url=base_url)
 
@@ -500,12 +540,8 @@ def profile_guide():
 • Current Medications: {collected_data.get('medications', 'None')}
 
 Does this look correct? If everything looks good, you can save your profile now!"""
-            
-            return jsonify({
-                "reply": summary,
-                "step": 7,
-                "readyToSave": True
-            })
+
+            return jsonify({"reply": summary, "step": 7, "readyToSave": True})
         else:
             # 信息收集步骤
             if language == "zh":
@@ -515,7 +551,7 @@ Does this look correct? If everything looks good, you can save your profile now!
                     3: "提取用户的性别。接受'男'、'男性'为Male，'女'、'女性'为Female。只返回一个词：Male、Female或Other。",
                     4: "提取健康状况。老年人常见的有：糖尿病、高血压、关节炎、心脏病。如果说'没有'或'健康'，返回'无'。要全面但简洁。",
                     5: "提取过敏史。常见的有：药物过敏（青霉素）、食物过敏（花生、海鲜）、环境过敏（花粉）。如果说'没有'，返回'无'。",
-                    6: "提取药物名称。老年人常用药物：二甲双胍、赖诺普利、阿司匹林、阿托伐他汀。如果说'没有'，返回'无'。用逗号分隔列出。"
+                    6: "提取药物名称。老年人常用药物：二甲双胍、赖诺普利、阿司匹林、阿托伐他汀。如果说'没有'，返回'无'。用逗号分隔列出。",
                 }
                 system_content = f"""你正在从用户回复中提取信息。{field_instructions.get(step, '')}
 
@@ -529,17 +565,17 @@ Does this look correct? If everything looks good, you can save your profile now!
                     3: "Extract the person's gender. Accept variations like 'man/boy' as Male, 'woman/girl' as Female. Return ONLY one word: Male, Female, or Other.",
                     4: "Extract health conditions. Common ones for elderly: diabetes, high blood pressure, arthritis, heart disease. If they say 'none' or 'healthy', return 'None'. Be comprehensive but concise.",
                     5: "Extract allergies. Common ones: medications (penicillin), foods (peanuts, shellfish), environmental (pollen). If they say 'none', return 'None'.",
-                    6: "Extract medication names. Common elderly medications: Metformin, Lisinopril, Aspirin, Atorvastatin. If they say 'none', return 'None'. List them separated by commas."
+                    6: "Extract medication names. Common elderly medications: Metformin, Lisinopril, Aspirin, Atorvastatin. If they say 'none', return 'None'. List them separated by commas.",
                 }
                 system_content = f"""You are extracting information from user responses. {field_instructions.get(step, '')}
 
 User's response: "{user_message}"
 
 Extract and return ONLY the requested information, formatted appropriately. Be understanding of various ways elderly people might express information."""
-            
+
             messages = [
                 {"role": "system", "content": system_content},
-                {"role": "user", "content": user_message}
+                {"role": "user", "content": user_message},
             ]
 
             response = client.chat.completions.create(
@@ -559,7 +595,7 @@ Extract and return ONLY the requested information, formatted appropriately. Be u
                     3: f"知道了！你有什么现有的健康状况我应该知道的吗？比如糖尿病、高血压或关节炎？",
                     4: f"谢谢分享。你有什么过敏吗？可能是对药物、食物或其他东西。",
                     5: f"了解了。你目前在服用什么药物吗？如果有的话，是哪些？",
-                    6: f"完美！让我给你展示我们收集到的信息..."
+                    6: f"完美！让我给你展示我们收集到的信息...",
                 }
             else:
                 next_prompts = {
@@ -568,24 +604,32 @@ Extract and return ONLY the requested information, formatted appropriately. Be u
                     3: f"Got it! Do you have any existing health conditions I should know about? For example, diabetes, high blood pressure, or arthritis?",
                     4: f"Thanks for sharing. Do you have any allergies? This could be to medications, foods, or anything else.",
                     5: f"Good to know. Are you currently taking any medications? If so, which ones?",
-                    6: f"Perfect! Let me show you what we've collected..."
+                    6: f"Perfect! Let me show you what we've collected...",
                 }
 
-            next_question = next_prompts.get(step, "Thank you!" if language == "en" else "谢谢！")
-            return jsonify({
-                "reply": next_question,
-                "extracted": extracted_info,
-                "step": step
-            })
+            next_question = next_prompts.get(
+                step, "Thank you!" if language == "en" else "谢谢！"
+            )
+            return jsonify(
+                {"reply": next_question, "extracted": extracted_info, "step": step}
+            )
 
     except Exception as e:
         print(f"Profile Guide Error: {e}")
         import traceback
+
         traceback.print_exc()
         if language == "zh":
             return jsonify({"reply": "抱歉，我理解有困难。你能再试一次吗？"}), 500
         else:
-            return jsonify({"reply": "Sorry, I had trouble understanding. Could you try again?"}), 500
+            return (
+                jsonify(
+                    {
+                        "reply": "Sorry, I had trouble understanding. Could you try again?"
+                    }
+                ),
+                500,
+            )
 
 
 if __name__ == "__main__":
