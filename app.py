@@ -11,7 +11,8 @@ import json
 app = Flask(__name__)
 
 # 设置阿里云API Key
-dashscope.api_key = os.getenv("DASHSCOPE_API_KEY")
+API_KEY = os.getenv("DASHSCOPE_API_KEY")
+dashscope.api_key = API_KEY
 
 # 创建音频文件存储目录
 AUDIO_DIR = os.path.join(app.root_path, "static", "audio")
