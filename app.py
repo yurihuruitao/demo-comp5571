@@ -335,6 +335,19 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/health")
+def health_check():
+    """健康检查端点 - 用于诊断 Vercel 部署"""
+    import sys
+    return jsonify({
+        "status": "ok",
+        "message": "Flask app is running on Vercel",
+        "python_version": sys.version,
+        "has_api_key": bool(os.getenv("DASHSCOPE_API_KEY")),
+        "routes": [str(rule) for rule in app.url_map.iter_rules()]
+    })
+
+
 @app.route("/get_suggestion", methods=["POST"])
 def get_suggestion():
     """接收前端请求并返回模型生成的建议，支持 Function Calling"""
