@@ -335,6 +335,13 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/static/<path:filename>")
+def serve_static(filename):
+    """显式提供静态文件 - Vercel 备用方案"""
+    from flask import send_from_directory
+    return send_from_directory("static", filename)
+
+
 @app.route("/health")
 def health_check():
     """健康检查端点 - 用于诊断 Vercel 部署"""

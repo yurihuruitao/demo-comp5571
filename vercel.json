@@ -7,11 +7,18 @@
       "config": {
         "maxLambdaSize": "50mb"
       }
+    },
+    {
+      "src": "static/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
     {
       "src": "/static/(.*)",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      },
       "dest": "/static/$1"
     },
     {
