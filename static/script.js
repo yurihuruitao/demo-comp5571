@@ -297,12 +297,253 @@ document.addEventListener('DOMContentLoaded', () => {
         languageToggleBtn.addEventListener('click', switchLanguage);
     }
 
-    // 音频播放器
+    // ============ 实时音频播放器 (真·流式播放版) ============
+    
+    class RealtimeAudioPlayer {
+        constructor() {
+            this.audioContext = null;
+            this.isPlaying = false;
+            this.playQueue = [];
+            this.currentTime = 0;
+        }
+        
+        async init() {
+            if (!this.audioContext) {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (this.audioContext.state === 'suspended') {
+                await this.audioContext.resume();
+            }
+        }
+        
+        // 将 PCM 数据转换为 WAV 格式
+        pcmToWav(pcmData, sampleRate = 22050, numChannels = 1, bitsPerSample = 16) {
+            const dataLength = pcmData.length;
+            const buffer = new ArrayBuffer(44 + dataLength);
+            const view = new DataView(buffer);
+            
+            const writeString = (offset, string) => {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            };
+            
+            writeString(0, 'RIFF');
+            view.setUint32(4, 36 + dataLength, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, numChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * numChannels * bitsPerSample / 8, true);
+            view.setUint16(32, numChannels * bitsPerSample / 8, true);
+            view.setUint16(34, bitsPerSample, true);
+            writeString(36, 'data');
+            view.setUint32(40, dataLength, true);
+            
+            const pcmView = new Uint8Array(buffer, 44);
+            pcmView.set(pcmData);
+            
+            return buffer;
+        }
+        
+        // SSE 流式播放: 缓冲后再播放 (避免破音)
+        async streamFromSSE(text) {
+            await this.init();
+            
+            this.isPlaying = true;
+            this.currentTime = this.audioContext.currentTime;
+            this.playQueue = [];
+            
+            // 缓冲配置
+            const BUFFER_SIZE = 5; // 缓冲前5个音频块
+            let chunkBuffer = [];
+            let hasStartedPlaying = false;
+            
+            console.log('🎵 [SSE流式播放] 开始接收音频流');
+            
+            return new Promise((resolve, reject) => {
+                // 创建 EventSource 连接
+                fetch('/stream_audio', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text: text})
+                }).then(response => {
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+                    
+                    const processChunk = async ({done, value}) => {
+                        if (done) {
+                            console.log('✅ [SSE] 流式接收完成');
+                            
+                            // 播放缓冲区剩余的音频块
+                            if (chunkBuffer.length > 0) {
+                                console.log(`🎵 [缓冲] 批量调度剩余 ${chunkBuffer.length} 个音频块`);
+                                const playPromises = chunkBuffer.map(bufferedChunk => 
+                                    this.playChunkImmediately(bufferedChunk.chunk, bufferedChunk.index)
+                                );
+                                await Promise.all(playPromises);
+                            }
+                            
+                            // 等待播放完成
+                            const totalDuration = this.currentTime - this.audioContext.currentTime;
+                            setTimeout(() => {
+                                this.isPlaying = false;
+                                this.playQueue = [];
+                                resolve();
+                            }, totalDuration * 1000 + 100);
+                            return;
+                        }
+                        
+                        buffer += decoder.decode(value, {stream: true});
+                        const lines = buffer.split('\n\n');
+                        buffer = lines.pop(); // 保留不完整的行
+                        
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                try {
+                                    const data = JSON.parse(line.substring(6));
+                                    
+                                    if (data.error) {
+                                        console.error('❌ [SSE] 服务器错误:', data.error);
+                                        reject(new Error(data.error));
+                                        return;
+                                    }
+                                    
+                                    if (data.done) {
+                                        console.log(`✅ [SSE] 接收完成: ${data.total || 0} 个音频块`);
+                                        continue;
+                                    }
+                                    
+                                    if (data.chunk) {
+                                        // 缓冲策略
+                                        if (!hasStartedPlaying) {
+                                            // 缓冲阶段: 收集音频块
+                                            chunkBuffer.push({chunk: data.chunk, index: data.index});
+                                            console.log(`📦 [缓冲] 收集音频块 ${data.index} (${chunkBuffer.length}/${BUFFER_SIZE})`);
+                                            
+                                            // 达到缓冲大小后开始播放
+                                            if (chunkBuffer.length >= BUFFER_SIZE) {
+                                                hasStartedPlaying = true;
+                                                console.log(`🎬 [缓冲] 缓冲完成，批量调度 ${chunkBuffer.length} 个音频块`);
+                                                
+                                                // 批量调度缓冲的音频块 (不用 await,让它们并行解码)
+                                                const playPromises = chunkBuffer.map(bufferedChunk => 
+                                                    this.playChunkImmediately(bufferedChunk.chunk, bufferedChunk.index)
+                                                );
+                                                
+                                                // 等待所有块解码完成
+                                                await Promise.all(playPromises);
+                                                
+                                                chunkBuffer = []; // 清空缓冲区
+                                                console.log(`✅ [缓冲] 所有缓冲块已调度完成`);
+                                            }
+                                        } else {
+                                            // 播放阶段: 立即播放新收到的块
+                                            await this.playChunkImmediately(data.chunk, data.index);
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.error('❌ [SSE] 解析数据失败:', e);
+                                }
+                            }
+                        }
+                        
+                        // 继续读取
+                        reader.read().then(processChunk).catch(reject);
+                    };
+                    
+                    reader.read().then(processChunk).catch(reject);
+                    
+                }).catch(error => {
+                    console.error('❌ [SSE] 连接失败:', error);
+                    this.isPlaying = false;
+                    reject(error);
+                });
+            });
+        }
+        
+        // 立即播放单个音频块 (使用精确时间调度)
+        async playChunkImmediately(base64Chunk, index) {
+            try {
+                // Base64 解码
+                const binaryString = atob(base64Chunk);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                
+                // 转换为 WAV
+                const wavBuffer = this.pcmToWav(bytes, 22050, 1, 16);
+                
+                // 解码音频
+                const audioBuffer = await this.audioContext.decodeAudioData(wavBuffer);
+                
+                // 如果是第一个块,设置起始时间 (留一点缓冲)
+                if (this.playQueue.length === 0) {
+                    this.currentTime = this.audioContext.currentTime + 0.1; // 100ms 缓冲
+                    console.log(`🎬 [SSE播放] 初始化播放时间: ${this.currentTime.toFixed(3)}s`);
+                }
+                
+                // 创建音源并调度播放
+                const source = this.audioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(this.audioContext.destination);
+                
+                // 在精确的时间点开始播放
+                const startTime = Math.max(this.currentTime, this.audioContext.currentTime);
+                source.start(startTime);
+                
+                // 更新下一个块的播放时间
+                this.currentTime = startTime + audioBuffer.duration;
+                
+                this.playQueue.push(source);
+                
+                console.log(`▶️ [SSE播放] 块 ${index} 已调度, 开始: ${startTime.toFixed(3)}s, 时长: ${audioBuffer.duration.toFixed(2)}s`);
+                
+            } catch (error) {
+                console.error(`❌ [SSE播放] 块 ${index} 播放失败:`, error);
+            }
+        }
+        
+        // 兼容旧方法 (暂时不使用)
+        async playChunks(base64Chunks) {
+            console.warn('[警告] 使用了旧的批量播放方法,建议使用 streamFromSSE');
+            // 可以保留兼容性实现
+        }
+        
+        stop() {
+            if (this.playQueue.length > 0) {
+                try {
+                    for (const source of this.playQueue) {
+                        source.stop();
+                        source.disconnect();
+                    }
+                } catch (e) {
+                    console.log('Stop error:', e);
+                }
+                this.playQueue = [];
+            }
+            this.isPlaying = false;
+            this.currentTime = 0;
+        }
+    }
+    
+    // 创建全局实时播放器
+    const realtimePlayer = new RealtimeAudioPlayer();
+    
+    // 兼容旧版播放器（用于静态音频文件）
     let currentAudio = null;
     let currentAudioBtn = null;
 
     // 停止当前音频播放
     function stopAudio() {
+        // 停止实时播放器
+        realtimePlayer.stop();
+        
+        // 停止传统播放器
         if (currentAudio) {
             currentAudio.pause();
             currentAudio = null;
@@ -314,7 +555,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 播放音频函数（支持暂停/继续）
+    // 播放音频函数（支持暂停/继续）- 传统方式
     function toggleAudio(audioUrl, buttonElement) {
         // 如果点击的是同一个按钮
         if (currentAudioBtn === buttonElement && currentAudio && !currentAudio.paused) {
@@ -1325,26 +1566,17 @@ document.addEventListener('DOMContentLoaded', () => {
             textP.textContent = data.suggestion;
             aiMessageDiv.appendChild(textP);
 
-            // 如果有音频URL,添加播放按钮
-            if (data.audio_url) {
-                const audioBtn = document.createElement('button');
-                audioBtn.className = 'audio-btn';
-                audioBtn.innerHTML = '🔊 Play Audio';
-                audioBtn.onclick = () => toggleAudio(data.audio_url, audioBtn);
-                aiMessageDiv.appendChild(audioBtn);
-            }
-
             suggestionMessages.appendChild(aiMessageDiv);
 
-            // 自动播放语音
-            if (data.audio_url) {
-                console.log("Auto-playing audio:", data.audio_url); // 调试信息
-                const audioBtn = aiMessageDiv.querySelector('.audio-btn');
-                if (audioBtn) {
-                    toggleAudio(data.audio_url, audioBtn);
+            // SSE 流式播放实时语音
+            if (data.is_realtime) {
+                console.log('[健康建议] 开始SSE流式播放');
+                try {
+                    await realtimePlayer.streamFromSSE(data.suggestion);
+                    console.log('✅ [健康建议] SSE流式播放完成');
+                } catch (error) {
+                    console.error('❌ [健康建议] SSE流式播放失败:', error);
                 }
-            } else {
-                console.log("No audio URL received"); // 调试信息
             }
 
             // 滚动到底部
@@ -1458,26 +1690,17 @@ document.addEventListener('DOMContentLoaded', () => {
             textP.textContent = data.reply;
             aiMessageDiv.appendChild(textP);
 
-            // 如果有音频URL,添加播放按钮
-            if (data.audio_url) {
-                const audioBtn = document.createElement('button');
-                audioBtn.className = 'audio-btn';
-                audioBtn.innerHTML = '🔊 Play Audio';
-                audioBtn.onclick = () => toggleAudio(data.audio_url, audioBtn);
-                aiMessageDiv.appendChild(audioBtn);
-            }
-
             chatMessages.appendChild(aiMessageDiv);
 
-            // 自动播放语音
-            if (data.audio_url) {
-                console.log("Auto-playing chat audio:", data.audio_url); // 调试信息
-                const audioBtn = aiMessageDiv.querySelector('.audio-btn');
-                if (audioBtn) {
-                    toggleAudio(data.audio_url, audioBtn);
+            // SSE 流式播放实时语音
+            if (data.is_realtime) {
+                console.log('[聊天] 开始SSE流式播放');
+                try {
+                    await realtimePlayer.streamFromSSE(data.reply);
+                    console.log('✅ [聊天] SSE流式播放完成');
+                } catch (error) {
+                    console.error('❌ [聊天] SSE流式播放失败:', error);
                 }
-            } else {
-                console.log("No audio URL received for chat"); // 调试信息
             }
 
             // 滚动到底部

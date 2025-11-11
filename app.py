@@ -1,11 +1,12 @@
 from flask import Flask, render_template, request, jsonify, send_file
 from openai import OpenAI
 import dashscope
-from dashscope.audio.tts import SpeechSynthesizer as AliTTS
+from dashscope.audio.tts_v2 import SpeechSynthesizer, ResultCallback, AudioFormat
 import os
 import uuid
 import re
 import json
+import base64
 
 # 初始化 Flask 应用
 app = Flask(__name__)
@@ -87,68 +88,135 @@ def clean_text_for_speech(text):
     return text
 
 
-def text_to_speech(text):
+# ========= 实时语音合成回调类 =========
+class RealtimeTTSCallback(ResultCallback):
+    """实时语音合成回调 - 收集音频数据块"""
+    
+    def __init__(self):
+        super().__init__()
+        self.audio_chunks = []
+        self.total_bytes = 0
+
+    def on_open(self):
+        print("🔊 [实时TTS] WebSocket 连接已建立")
+
+    def on_complete(self):
+        print(f"✅ [实时TTS] 合成完成，总计 {self.total_bytes} 字节")
+
+    def on_error(self, message: str):
+        print(f"❌ [实时TTS] 合成失败: {message}")
+
+    def on_close(self):
+        print("🔌 [实时TTS] WebSocket 连接已关闭")
+
+    def on_event(self, message):
+        print(f"📩 [实时TTS] 事件: {message}")
+
+    def on_data(self, data: bytes) -> None:
+        """接收音频数据块"""
+        self.total_bytes += len(data)
+        self.audio_chunks.append(data)
+        print(f"🎵 [实时TTS] 音频块 {len(self.audio_chunks)}: {len(data)} 字节")
+
+
+# ========= 流式回调类 (边接收边发送) =========
+class StreamingTTSCallback(ResultCallback):
+    """流式TTS回调 - 边接收边yield音频块"""
+    
+    def __init__(self, queue):
+        super().__init__()
+        self.queue = queue  # 使用队列传递数据
+        self.total_bytes = 0
+        self.chunk_count = 0
+
+    def on_open(self):
+        print("🔊 [流式TTS] WebSocket 连接已建立")
+
+    def on_complete(self):
+        print(f"✅ [流式TTS] 合成完成，总计 {self.total_bytes} 字节, {self.chunk_count} 个音频块")
+        self.queue.put(None)  # 发送结束信号
+
+    def on_error(self, message: str):
+        print(f"❌ [流式TTS] 合成失败: {message}")
+        self.queue.put({"error": message})
+
+    def on_close(self):
+        print("🔌 [流式TTS] WebSocket 连接已关闭")
+
+    def on_event(self, message):
+        pass  # 减少日志输出
+
+    def on_data(self, data: bytes) -> None:
+        """接收音频数据块并立即放入队列"""
+        self.total_bytes += len(data)
+        self.chunk_count += 1
+        print(f"📤 [流式TTS] 发送音频块 {self.chunk_count}: {len(data)} 字节")
+        self.queue.put(data)  # 立即放入队列供前端消费
+
+
+def text_to_speech_realtime(text):
     """
-    将文本转换为语音并保存为音频文件。
-
+    实时语音合成 - 流式处理，返回 Base64 编码的音频块数组
+    
     Args:
-        text: 要转换的文本内容。
-
+        text: 要转换的文本内容
+        
     Returns:
-        音频文件的URL路径,如果失败返回None。
+        Base64 编码的音频块列表，失败返回 None
     """
     try:
-        # 按需关闭 TTS，避免线上内存/超时风险
+        # 按需关闭 TTS
         if not ENABLE_TTS:
-            print("[TTS] 已禁用，跳过生成（设置 ENABLE_TTS=1 可开启）")
+            print("[实时TTS] 已禁用，跳过生成（设置 ENABLE_TTS=1 可开启）")
             return None
 
-        # 清理文本,移除标点符号
+        # 清理文本
         clean_text = clean_text_for_speech(text)
 
         if not clean_text or len(clean_text.strip()) == 0:
-            print("清理后的文本为空,跳过语音合成")
+            print("[实时TTS] 清理后的文本为空，跳过语音合成")
             return None
 
-        # 控制合成长度，避免长文本导致内存/耗时峰值
+        # 控制合成长度
         if len(clean_text) > TTS_MAX_CHARS:
-            print(f"[TTS] 文本过长，已从 {len(clean_text)} 裁剪为 {TTS_MAX_CHARS}")
+            print(f"[实时TTS] 文本过长，已从 {len(clean_text)} 裁剪为 {TTS_MAX_CHARS}")
             clean_text = clean_text[:TTS_MAX_CHARS]
 
-        print(f"原始文本长度: {len(text)}, 清理后长度: {len(clean_text)}")
+        print(f"[实时TTS] 开始合成: 原始 {len(text)} 字符，清理后 {len(clean_text)} 字符")
 
-        # 生成唯一的文件名
-        audio_filename = f"{uuid.uuid4()}.mp3"
-        audio_path = os.path.join(AUDIO_DIR, audio_filename)
-
-        # 使用会直接产出压缩音频（MP3）的 DashScope TTS，降低内存占用
-        result = AliTTS.call(
-            model="sambert-zhiqi-v1",
-            text=clean_text,
-            sample_rate=24000,
-            rate=1.0,
-            format="mp3",
+        # 创建回调实例
+        callback = RealtimeTTSCallback()
+        
+        # 创建语音合成器（使用 CosyVoice v2 实时模型）
+        synthesizer = SpeechSynthesizer(
+            model="cosyvoice-v2",
+            voice="longxiaochun_v2",  # 温暖女声
+            format=AudioFormat.PCM_22050HZ_MONO_16BIT,
+            callback=callback,
         )
+        
+        # 流式合成
+        synthesizer.streaming_call(clean_text)
+        synthesizer.streaming_complete()
+        
+        request_id = synthesizer.get_last_request_id()
+        print(f"[实时TTS] 请求ID: {request_id}")
 
-        audio_bytes = result.get_audio_data() if result else None
-
-        # 检查是否成功生成音频数据
-        if audio_bytes:
-            # 保存音频文件
-            with open(audio_path, "wb") as f:
-                f.write(audio_bytes)
-
-            print(f"语音合成成功: {audio_filename} (size={len(audio_bytes)} bytes)")
-            # 返回音频URL
-            return f"/static/audio/{audio_filename}"
+        # 转换为 Base64 编码
+        if callback.audio_chunks:
+            audio_chunks_base64 = [
+                base64.b64encode(chunk).decode('utf-8') 
+                for chunk in callback.audio_chunks
+            ]
+            print(f"✅ [实时TTS] 合成成功: {len(audio_chunks_base64)} 个音频块")
+            return audio_chunks_base64
         else:
-            print(f"语音合成返回空数据或格式错误")
+            print("[实时TTS] 未生成音频数据")
             return None
 
     except Exception as e:
-        print(f"语音合成失败: {e}")
+        print(f"❌ [实时TTS] 合成失败: {e}")
         import traceback
-
         traceback.print_exc()
         return None
 
@@ -392,51 +460,136 @@ def health_check():
 
 @app.route("/get_suggestion", methods=["POST"])
 def get_suggestion():
-    """接收前端请求并返回模型生成的建议，支持 Function Calling"""
+    """接收前端请求并返回模型生成的建议 (文本部分)"""
     try:
         data = request.get_json()
         disease_text = data.get("disease", "")
         user_profile = data.get("userProfile", "")
-        language = data.get("language", "en")  # 获取语言参数，默认英文
+        language = data.get("language", "en")
 
-        # 调用AI模型API (返回字典格式,可能包含函数调用)
+        # 调用AI模型API
         result = call_qwen_max_api(disease_text, user_profile, language)
-
-        # 提取建议文本
         suggestion = result.get("suggestion", "")
 
-        # 生成语音
-        audio_url = text_to_speech(suggestion)
-        print(f"返回的音频URL: {audio_url}")  # 调试信息
+        # 只返回文本,音频通过 SSE 流式传输
+        response_data = {
+            "suggestion": suggestion,
+            "is_realtime": True
+        }
 
-        # 准备响应
-        response_data = {"suggestion": suggestion, "audio_url": audio_url}
-
-        # 如果有函数调用,添加到响应中
         if "function_call" in result:
             response_data["function_call"] = result["function_call"]
-            print(f"医生API返回函数调用: {result['function_call']}")
 
         return jsonify(response_data)
     except Exception as e:
         print(f"Error: {e}")
         import traceback
-
         traceback.print_exc()
-        return (
-            jsonify({"suggestion": "Server error occurred. Please try again later."}),
-            500,
+        return jsonify({"suggestion": "Server error occurred. Please try again later."}), 500
+
+
+@app.route("/stream_audio", methods=["POST"])
+def stream_audio():
+    """SSE 流式传输音频块 - 边合成边发送 (真·实时)"""
+    from flask import Response
+    import queue
+    import threading
+    
+    # ⚠️ 重要: 在进入生成器之前解析请求数据
+    data = request.get_json()
+    text = data.get("text", "")
+    
+    if not ENABLE_TTS or not text:
+        def empty_stream():
+            yield f"data: {json.dumps({'done': True})}\n\n"
+        return Response(
+            empty_stream(),
+            mimetype='text/event-stream',
+            headers={'Cache-Control': 'no-cache'}
         )
+    
+    # 清理文本
+    clean_text = clean_text_for_speech(text)
+    if len(clean_text) > TTS_MAX_CHARS:
+        clean_text = clean_text[:TTS_MAX_CHARS]
+    
+    print(f"[SSE流式TTS] 开始合成: {len(clean_text)} 字符")
+    
+    def generate_audio_stream():
+        try:
+            # 创建队列用于线程间通信
+            audio_queue = queue.Queue()
+            
+            # 在后台线程中运行 TTS 合成
+            def run_synthesis():
+                try:
+                    callback = StreamingTTSCallback(audio_queue)
+                    synthesizer = SpeechSynthesizer(
+                        model="cosyvoice-v2",
+                        voice="longxiaochun_v2",
+                        format=AudioFormat.PCM_22050HZ_MONO_16BIT,
+                        callback=callback,
+                    )
+                    synthesizer.streaming_call(clean_text)
+                    synthesizer.streaming_complete()
+                except Exception as e:
+                    print(f"❌ [TTS线程] 合成失败: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    audio_queue.put({"error": str(e)})
+                    audio_queue.put(None)
+            
+            # 启动 TTS 合成线程
+            synthesis_thread = threading.Thread(target=run_synthesis, daemon=True)
+            synthesis_thread.start()
+            
+            # 边接收边发送音频块
+            chunk_count = 0
+            while True:
+                # 从队列中获取音频块 (阻塞等待)
+                audio_chunk = audio_queue.get()
+                
+                # 检查是否完成
+                if audio_chunk is None:
+                    yield f"data: {json.dumps({'done': True, 'total': chunk_count})}\n\n"
+                    print(f"✅ [SSE] 流式传输完成: {chunk_count} 个音频块")
+                    break
+                
+                # 检查是否有错误
+                if isinstance(audio_chunk, dict) and "error" in audio_chunk:
+                    yield f"data: {json.dumps(audio_chunk)}\n\n"
+                    break
+                
+                # 编码并发送音频块
+                chunk_count += 1
+                chunk_b64 = base64.b64encode(audio_chunk).decode('utf-8')
+                yield f"data: {json.dumps({'chunk': chunk_b64, 'index': chunk_count})}\n\n"
+                
+        except Exception as e:
+            print(f"❌ [SSE] 流式传输失败: {e}")
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+    
+    return Response(
+        generate_audio_stream(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive'
+        }
+    )
 
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    """处理聊天请求，提供友好的陪伴式对话，支持 Function Calling"""
+    """处理聊天请求 (文本部分),音频通过 SSE 流式传输"""
     try:
         data = request.get_json()
         user_message = data.get("message", "")
         user_profile = data.get("userProfile", "")
-        language = data.get("language", "en")  # 获取语言参数，默认英文
+        language = data.get("language", "en")
 
         if not user_message or user_message.strip() == "":
             if language == "zh":
@@ -444,37 +597,26 @@ def chat():
             else:
                 return jsonify({"reply": "What would you like to talk about?"})
 
-        # 调用聊天API (返回字典格式,可能包含函数调用)
+        # 调用聊天API
         result = call_chat_api(user_message, user_profile, language)
-
-        # 提取回复文本
         reply = result.get("reply", "")
 
-        # 生成语音
-        audio_url = text_to_speech(reply)
-        print(f"聊天返回的音频URL: {audio_url}")
+        # 只返回文本,音频通过 SSE 流式传输
+        response_data = {
+            "reply": reply,
+            "is_realtime": True
+        }
 
-        # 准备响应
-        response_data = {"reply": reply, "audio_url": audio_url}
-
-        # 如果有函数调用,添加到响应中
         if "function_call" in result:
             response_data["function_call"] = result["function_call"]
-            print(f"返回函数调用: {result['function_call']}")
 
         return jsonify(response_data)
 
     except Exception as e:
         print(f"Chat Error: {e}")
         import traceback
-
         traceback.print_exc()
-        return (
-            jsonify(
-                {"reply": "Sorry, I'm not feeling well right now. Can we chat later?"}
-            ),
-            500,
-        )
+        return jsonify({"reply": "Sorry, I'm not feeling well right now. Can we chat later?"}), 500
 
 
 @app.route("/profile_guide", methods=["POST"])
