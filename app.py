@@ -24,9 +24,21 @@ except Exception as e:
     AUDIO_DIR = "/tmp/audio"
     os.makedirs(AUDIO_DIR, exist_ok=True)
 
-# ========= TTS 运行开关与长度上限（默认关闭以防线上内存/超时） =========
+# ========= 部署/运行环境检测与 TTS 配置 =========
 ENABLE_TTS = 1
 TTS_MAX_CHARS = int(os.getenv("TTS_MAX_CHARS", "1000"))
+
+# 检测是否运行在 Vercel (约定: Vercel 会设置 VERCEL 环境变量)
+IS_VERCEL = bool(os.getenv("VERCEL"))
+
+# 说明: Vercel Python 运行于 Serverless Lambda，缺省情况下对长连接 / SSE 的支持不稳定，
+# 响应可能被整块缓冲，导致前端无法真正边接收边播放。
+# 因此在 Vercel 环境下回退到一次性 TTS 生成（仍然返回多块，但不做 SSE），或者提供单次合成接口。
+STREAMING_SUPPORTED = not IS_VERCEL  # 本地支持 streaming，Vercel 回退。
+if IS_VERCEL:
+    print("[部署环境] 检测到 Vercel，禁用真正的流式 SSE 播放，使用回退模式。")
+else:
+    print("[部署环境] 非 Vercel（本地或其它），启用流式 SSE 模式。")
 # ===============================================================
 
 # 定义 Function Call 工具
@@ -216,6 +228,76 @@ def text_to_speech_realtime(text):
 
     except Exception as e:
         print(f"❌ [实时TTS] 合成失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def _pcm_to_wav_bytes(pcm_bytes: bytes, sample_rate: int = 22050, channels: int = 1, bits_per_sample: int = 16) -> bytes:
+    """将原始 PCM 字节包装为 WAV 文件字节。"""
+    import struct
+
+    byte_rate = sample_rate * channels * bits_per_sample // 8
+    block_align = channels * bits_per_sample // 8
+    data_size = len(pcm_bytes)
+    riff_chunk_size = 36 + data_size
+
+    # WAV 头（小端）
+    header = b"".join([
+        b"RIFF",
+        struct.pack('<I', riff_chunk_size),
+        b"WAVE",
+        b"fmt ",
+        struct.pack('<I', 16),               # fmt chunk size
+        struct.pack('<H', 1),                # audio format PCM
+        struct.pack('<H', channels),
+        struct.pack('<I', sample_rate),
+        struct.pack('<I', byte_rate),
+        struct.pack('<H', block_align),
+        struct.pack('<H', bits_per_sample),
+        b"data",
+        struct.pack('<I', data_size),
+    ])
+    return header + pcm_bytes
+
+
+def text_to_speech_wav(text):
+    """
+    一次性语音合成：返回单个 WAV Base64 字符串（Vercel 回退方案）。
+
+    Returns:
+        str | None: base64 编码的 WAV 文件内容
+    """
+    try:
+        if not ENABLE_TTS:
+            return None
+
+        clean_text = clean_text_for_speech(text or "")
+        if not clean_text:
+            return None
+        if len(clean_text) > TTS_MAX_CHARS:
+            clean_text = clean_text[:TTS_MAX_CHARS]
+
+        # 使用实时合成接口收集 PCM，然后封装为 WAV
+        callback = RealtimeTTSCallback()
+        synthesizer = SpeechSynthesizer(
+            model="cosyvoice-v2",
+            voice="longxiaochun_v2",
+            format=AudioFormat.PCM_22050HZ_MONO_16BIT,
+            callback=callback,
+        )
+        synthesizer.streaming_call(clean_text)
+        synthesizer.streaming_complete()
+
+        if not callback.audio_chunks:
+            return None
+        # 合并所有 PCM 字节
+        pcm_bytes = b"".join(callback.audio_chunks)
+        wav_bytes = _pcm_to_wav_bytes(pcm_bytes, 22050, 1, 16)
+        wav_b64 = base64.b64encode(wav_bytes).decode('utf-8')
+        return wav_b64
+    except Exception as e:
+        print(f"❌ [TTS-WAV] 合成失败: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -471,10 +553,11 @@ def get_suggestion():
         result = call_qwen_max_api(disease_text, user_profile, language)
         suggestion = result.get("suggestion", "")
 
-        # 只返回文本,音频通过 SSE 流式传输
+        # 返回文本；音频播放策略根据部署环境决定
         response_data = {
             "suggestion": suggestion,
-            "is_realtime": True
+            "is_realtime": True,
+            "streaming_supported": STREAMING_SUPPORTED
         }
 
         if "function_call" in result:
@@ -491,6 +574,12 @@ def get_suggestion():
 @app.route("/stream_audio", methods=["POST"])
 def stream_audio():
     """SSE 流式传输音频块 - 边合成边发送 (真·实时)"""
+    if not STREAMING_SUPPORTED:
+        # 在 Vercel 环境下直接提示前端使用一次性合成
+        return jsonify({
+            "error": "STREAMING_NOT_SUPPORTED",
+            "message": "Streaming is not supported on this deployment."
+        }), 400
     from flask import Response
     import queue
     import threading
@@ -582,6 +671,24 @@ def stream_audio():
     )
 
 
+@app.route("/tts_once", methods=["POST"])
+def tts_once():
+    """一次性 TTS 接口：返回 base64 WAV，供不支持流式的环境使用。"""
+    try:
+        data = request.get_json() or {}
+        text = data.get("text", "")
+        wav_b64 = text_to_speech_wav(text)
+        return jsonify({
+            "wav_base64": wav_b64,
+            "success": bool(wav_b64),
+            "streaming_supported": STREAMING_SUPPORTED,
+        })
+    except Exception as e:
+        print(f"❌ [/tts_once] 错误: {e}")
+        import traceback; traceback.print_exc()
+        return jsonify({"wav_base64": None, "success": False, "error": str(e)}), 500
+
+
 @app.route("/chat", methods=["POST"])
 def chat():
     """处理聊天请求 (文本部分),音频通过 SSE 流式传输"""
@@ -601,10 +708,11 @@ def chat():
         result = call_chat_api(user_message, user_profile, language)
         reply = result.get("reply", "")
 
-        # 只返回文本,音频通过 SSE 流式传输
+        # 返回文本；音频播放策略根据部署环境决定
         response_data = {
             "reply": reply,
-            "is_realtime": True
+            "is_realtime": True,
+            "streaming_supported": STREAMING_SUPPORTED
         }
 
         if "function_call" in result:

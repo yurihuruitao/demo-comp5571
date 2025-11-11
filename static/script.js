@@ -347,6 +347,38 @@ document.addEventListener('DOMContentLoaded', () => {
             
             return buffer;
         }
+
+        // 回退：向服务器请求一次性 WAV 并播放
+        async playWavFromServer(text) {
+            await this.init();
+            try {
+                const resp = await fetch('/tts_once', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text})
+                });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                if (!data || !data.wav_base64) throw new Error('No WAV data');
+
+                const byteString = atob(data.wav_base64);
+                const bytes = new Uint8Array(byteString.length);
+                for (let i = 0; i < byteString.length; i++) bytes[i] = byteString.charCodeAt(i);
+                const wavBuffer = bytes.buffer;
+
+                const audioBuffer = await this.audioContext.decodeAudioData(wavBuffer);
+                const source = this.audioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(this.audioContext.destination);
+                await new Promise((resolve) => {
+                    source.onended = resolve;
+                    source.start();
+                });
+                console.log('✅ [一次性播放] 完成');
+            } catch (e) {
+                console.error('❌ [一次性播放] 失败:', e);
+            }
+        }
         
         // SSE 流式播放: 缓冲后再播放 (避免破音)
         async streamFromSSE(text) {
@@ -1568,15 +1600,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
             suggestionMessages.appendChild(aiMessageDiv);
 
-            // SSE 流式播放实时语音
-            if (data.is_realtime) {
+            // 语音播放：优先 SSE 流式；Vercel 等不支持流式时回退为一次性 WAV
+            if (data.is_realtime && data.streaming_supported) {
                 console.log('[健康建议] 开始SSE流式播放');
                 try {
                     await realtimePlayer.streamFromSSE(data.suggestion);
                     console.log('✅ [健康建议] SSE流式播放完成');
                 } catch (error) {
-                    console.error('❌ [健康建议] SSE流式播放失败:', error);
+                    console.error('❌ [健康建议] SSE流式播放失败，回退一次性播放:', error);
+                    await realtimePlayer.playWavFromServer(data.suggestion);
                 }
+            } else {
+                console.log('[健康建议] 流式不支持，使用一次性播放');
+                await realtimePlayer.playWavFromServer(data.suggestion);
             }
 
             // 滚动到底部
@@ -1692,15 +1728,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
             chatMessages.appendChild(aiMessageDiv);
 
-            // SSE 流式播放实时语音
-            if (data.is_realtime) {
+            // 语音播放：优先 SSE 流式；不支持时回退一次性 WAV
+            if (data.is_realtime && data.streaming_supported) {
                 console.log('[聊天] 开始SSE流式播放');
                 try {
                     await realtimePlayer.streamFromSSE(data.reply);
                     console.log('✅ [聊天] SSE流式播放完成');
                 } catch (error) {
-                    console.error('❌ [聊天] SSE流式播放失败:', error);
+                    console.error('❌ [聊天] SSE流式播放失败，回退一次性播放:', error);
+                    await realtimePlayer.playWavFromServer(data.reply);
                 }
+            } else {
+                console.log('[聊天] 流式不支持，使用一次性播放');
+                await realtimePlayer.playWavFromServer(data.reply);
             }
 
             // 滚动到底部
