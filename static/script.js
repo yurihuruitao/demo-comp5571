@@ -284,6 +284,18 @@ function updateUILanguage() {
     
     // 更新页面标题
     document.title = translate('title');
+
+    // 中文下显示“粤语播报”开关，英文隐藏
+    const cantoneseToggle = document.getElementById('cantonese-toggle');
+    if (cantoneseToggle) {
+        if (currentLanguage === 'zh') {
+            cantoneseToggle.style.display = 'flex';
+        } else {
+            cantoneseToggle.style.display = 'none';
+            const checkbox = document.getElementById('use-cantonese');
+            if (checkbox) checkbox.checked = false;
+        }
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -305,6 +317,8 @@ document.addEventListener('DOMContentLoaded', () => {
             this.isPlaying = false;
             this.playQueue = [];
             this.currentTime = 0;
+            this.abortController = null; // 用于中断当前流
+            this.isPaused = false;      // 是否处于暂停状态
         }
         
         async init() {
@@ -349,13 +363,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // 回退：向服务器请求一次性 WAV 并播放
-        async playWavFromServer(text) {
+        async playWavFromServer(text, options = {}) {
             await this.init();
             try {
                 const resp = await fetch('/tts_once', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({text})
+                    body: JSON.stringify({
+                        text,
+                        use_cantonese: !!options.useCantonese
+                    })
                 });
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                 const data = await resp.json();
@@ -381,12 +398,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         // SSE 流式播放: 缓冲后再播放 (避免破音)
-        async streamFromSSE(text) {
+        async streamFromSSE(text, options = {}) {
             await this.init();
             
+            // 如果上一次还有在播，先强制停止
+            this.stop();
+
             this.isPlaying = true;
+            this.isPaused = false;
             this.currentTime = this.audioContext.currentTime;
             this.playQueue = [];
+            this.abortController = new AbortController();
             
             // 缓冲配置
             const BUFFER_SIZE = 5; // 缓冲前5个音频块
@@ -400,7 +422,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 fetch('/stream_audio', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({text: text})
+                    body: JSON.stringify({
+                        text: text,
+                        use_cantonese: !!options.useCantonese
+                    }),
+                    signal: this.abortController.signal
                 }).then(response => {
                     const reader = response.body.getReader();
                     const decoder = new TextDecoder();
@@ -420,10 +446,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                             
                             // 等待播放完成
-                            const totalDuration = this.currentTime - this.audioContext.currentTime;
+                            const totalDuration = Math.max(0, this.currentTime - this.audioContext.currentTime);
                             setTimeout(() => {
                                 this.isPlaying = false;
                                 this.playQueue = [];
+                                this.abortController = null;
                                 resolve();
                             }, totalDuration * 1000 + 100);
                             return;
@@ -492,6 +519,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }).catch(error => {
                     console.error('❌ [SSE] 连接失败:', error);
                     this.isPlaying = false;
+                    this.abortController = null;
                     reject(error);
                 });
             });
@@ -547,6 +575,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         stop() {
+            // 先中断网络流
+            if (this.abortController) {
+                try {
+                    this.abortController.abort();
+                } catch (e) {
+                    console.log('Abort error:', e);
+                }
+                this.abortController = null;
+            }
+
             if (this.playQueue.length > 0) {
                 try {
                     for (const source of this.playQueue) {
@@ -560,6 +598,31 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             this.isPlaying = false;
             this.currentTime = 0;
+            this.isPaused = false;
+        }
+
+        // 暂停：只暂停当前 AudioContext，不销毁队列
+        async pause() {
+            if (!this.audioContext || !this.isPlaying || this.isPaused) return;
+            try {
+                await this.audioContext.suspend();
+                this.isPaused = true;
+                console.log('⏸️ [TTS] 已暂停');
+            } catch (e) {
+                console.log('Pause error:', e);
+            }
+        }
+
+        // 继续：恢复 AudioContext
+        async resume() {
+            if (!this.audioContext || !this.isPlaying || !this.isPaused) return;
+            try {
+                await this.audioContext.resume();
+                this.isPaused = false;
+                console.log('▶️ [TTS] 继续播放');
+            } catch (e) {
+                console.log('Resume error:', e);
+            }
         }
     }
     
@@ -569,11 +632,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // 兼容旧版播放器（用于静态音频文件）
     let currentAudio = null;
     let currentAudioBtn = null;
+    // 当前控制TTS的暂停按钮
+    let currentTTSBtn = null;
 
     // 停止当前音频播放
     function stopAudio() {
         // 停止实时播放器
         realtimePlayer.stop();
+        currentTTSBtn = null;
         
         // 停止传统播放器
         if (currentAudio) {
@@ -645,6 +711,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const generateBtn = document.getElementById('generate-btn');
     const diseaseInput = document.getElementById('disease-input');
     const suggestionMessages = document.getElementById('suggestion-messages');
+    const useCantoneseCheckbox = document.getElementById('use-cantonese');
+    // 暂停/继续播放按钮容器可以在每条AI消息里单独放
 
     // 获取DOM元素 - 聊天模块
     const chatModal = document.getElementById('chat-modal');
@@ -1545,7 +1613,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ 
                     disease: diseaseText,
                     userProfile: getUserProfileContext(),
-                    language: currentLanguage  // 发送当前语言设置
+                    language: currentLanguage,  // 发送当前语言设置
+                    useCantonese: !!(useCantoneseCheckbox && useCantoneseCheckbox.checked)
                 })
             });
 
@@ -1598,21 +1667,41 @@ document.addEventListener('DOMContentLoaded', () => {
             textP.textContent = data.suggestion;
             aiMessageDiv.appendChild(textP);
 
+            // 创建暂停/继续播放按钮
+            const ttsCtrlBtn = document.createElement('button');
+            ttsCtrlBtn.className = 'tts-toggle-btn';
+            ttsCtrlBtn.textContent = '⏸️ 暂停语音';
+            ttsCtrlBtn.style.marginTop = '8px';
+            ttsCtrlBtn.onclick = async () => {
+                if (!realtimePlayer.isPlaying) return;
+                if (!realtimePlayer.isPaused) {
+                    await realtimePlayer.pause();
+                    ttsCtrlBtn.textContent = '▶️ 继续播放';
+                } else {
+                    await realtimePlayer.resume();
+                    ttsCtrlBtn.textContent = '⏸️ 暂停语音';
+                }
+            };
+            aiMessageDiv.appendChild(ttsCtrlBtn);
+
+            currentTTSBtn = ttsCtrlBtn;
+
             suggestionMessages.appendChild(aiMessageDiv);
 
             // 语音播放：优先 SSE 流式；Vercel 等不支持流式时回退为一次性 WAV
+            const useCantonese = !!data.use_cantonese;
             if (data.is_realtime && data.streaming_supported) {
                 console.log('[健康建议] 开始SSE流式播放');
                 try {
-                    await realtimePlayer.streamFromSSE(data.suggestion);
+                    await realtimePlayer.streamFromSSE(data.suggestion, { useCantonese });
                     console.log('✅ [健康建议] SSE流式播放完成');
                 } catch (error) {
                     console.error('❌ [健康建议] SSE流式播放失败，回退一次性播放:', error);
-                    await realtimePlayer.playWavFromServer(data.suggestion);
+                    await realtimePlayer.playWavFromServer(data.suggestion, { useCantonese });
                 }
             } else {
                 console.log('[健康建议] 流式不支持，使用一次性播放');
-                await realtimePlayer.playWavFromServer(data.suggestion);
+                await realtimePlayer.playWavFromServer(data.suggestion, { useCantonese });
             }
 
             // 滚动到底部

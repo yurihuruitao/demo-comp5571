@@ -202,7 +202,7 @@ def text_to_speech_realtime(text):
         # 创建语音合成器（使用 CosyVoice v2 实时模型）
         synthesizer = SpeechSynthesizer(
             model="cosyvoice-v2",
-            voice="longxiaochun_v2",  # 温暖女声
+            voice="longxiaochun_v2",  # 温暖女声（默认普通话）
             format=AudioFormat.PCM_22050HZ_MONO_16BIT,
             callback=callback,
         )
@@ -548,6 +548,7 @@ def get_suggestion():
         disease_text = data.get("disease", "")
         user_profile = data.get("userProfile", "")
         language = data.get("language", "en")
+        use_cantonese = bool(data.get("useCantonese", False))
 
         # 调用AI模型API
         result = call_qwen_max_api(disease_text, user_profile, language)
@@ -557,7 +558,8 @@ def get_suggestion():
         response_data = {
             "suggestion": suggestion,
             "is_realtime": True,
-            "streaming_supported": STREAMING_SUPPORTED
+            "streaming_supported": STREAMING_SUPPORTED,
+            "use_cantonese": use_cantonese,
         }
 
         if "function_call" in result:
@@ -587,6 +589,7 @@ def stream_audio():
     # ⚠️ 重要: 在进入生成器之前解析请求数据
     data = request.get_json()
     text = data.get("text", "")
+    use_cantonese = bool(data.get("use_cantonese", False))
     
     if not ENABLE_TTS or not text:
         def empty_stream():
@@ -615,7 +618,8 @@ def stream_audio():
                     callback = StreamingTTSCallback(audio_queue)
                     synthesizer = SpeechSynthesizer(
                         model="cosyvoice-v2",
-                        voice="longxiaochun_v2",
+                        # 中文+勾选粤语时使用 longjiayi_v2，其它情况使用 longxiaochun_v2
+                        voice="longjiayi_v2" if use_cantonese else "longxiaochun_v2",
                         format=AudioFormat.PCM_22050HZ_MONO_16BIT,
                         callback=callback,
                     )
@@ -677,6 +681,7 @@ def tts_once():
     try:
         data = request.get_json() or {}
         text = data.get("text", "")
+        # 一次性接口暂时仍只用普通话 voice（longxiaochun_v2），忽略粤语选项
         wav_b64 = text_to_speech_wav(text)
         return jsonify({
             "wav_base64": wav_b64,
